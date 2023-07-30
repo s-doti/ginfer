@@ -1,5 +1,7 @@
 # ginfer
 
+[![Clojars Project](https://img.shields.io/clojars/v/com.github.s-doti/ginfer.svg)](https://clojars.org/com.github.s-doti/ginfer)
+
 Graph inference library.
 
 ## The WHAT and the WHY
