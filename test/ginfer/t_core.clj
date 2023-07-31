@@ -54,23 +54,23 @@
     "data point attribute inference with env binding"
 
     (let [blueprints {:circle/radius (generic)
-                      :circle/area   (->inferred (fn [pi r] (* 2 pi r))
+                      :circle/circumference   (->inferred (fn [pi r] (* 2 pi r))
                                                  [[:env :constants :pi]
                                                   [:circle/radius]])}
           events (->update [] "circle/r2" :circle/radius 2)
           env {:constants {:pi 3.14}}
           final-state (infer blueprints events :env-context env)]
 
-      (get-data final-state "circle/r2" :circle/area) => 12.56)
+      (get-data final-state "circle/r2" :circle/circumference) => 12.56)
 
     ;natural language
     (let [blueprints-en ["circle radius"
-                         "circle area * from [[radius] [env constants factor]]"]
+                         "circle circumference * from [[radius] [env constants factor]]"]
           events-en ["r2's radius is 2"]
           env {:constants {:factor 6.28}}]
       (-> blueprints-en
           (infer events-en :dialect "en" :env-context env)
-          (get-data "circle/r2" :circle/area)) => 12.56))
+          (get-data "circle/r2" :circle/circumference)) => 12.56))
 
   (fact
     "data point notifies multiple inferred data points"
