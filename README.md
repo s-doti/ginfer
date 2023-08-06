@@ -4,6 +4,10 @@
 
 Graph inference library.
 
+*Graph inference* here is the process by which logical business deductions are 
+applied to a data set consisting of business entities, which are interconnected, 
+and interdependent; as in the case where an attribute of a business entity may be referencing other business entities, and/or its value may depend on other business entities' attributes.
+
 ## The WHAT and the WHY
 
 This library was conceived for work purposes.
@@ -102,66 +106,100 @@ delivering the update-notify-eval concept as a gist in under 100 lines of code.
 
 ## Usage
 
-Lets say for example we wanted to model a basic org chart. We'd start with some structural 
-statements, our blueprints for such a model:
+Lets say for example we wanted to model a basic org chart. We start small, with 
+few structural statements for our blueprints:
 ```clojure
-(def blueprints ["company has-many departments and department has company"
-                 "company head-count sum from [[departments head-count]]"
-                 "department has-many teams and team has department"
-                 "department head-count sum from [[teams head-count]]"
-                 "team has-many employees and employee has team"
-                 "team head-count count from [[employees]]"
-                 "employee allegiance identity from [[team department id]]"])
+(def blueprints ["team has-many employees and employee has team"
+                 "team head-count count from [[employees]]"])
 ```
-The pseudo english dialect, experimental at current phase, is equivalent to a 
-more mature (though less readable) programmatic declaration.  
-The weird '[[..]]' notation stands for a list of walkable paths in our model of any arbitrary length.  
-The `identity` and `sum` mentions are actually referencing our business logic, which expects 
-as input the data found at the end of each of the listed paths. `sum` isn't an existing fn 
+With these, we declare that our data consists of two types of entities: `team` 
+and `employee`; a `team` is referencing `employee` entities via its 'employees' 
+attribute, and `employee` in return is referencing a single `team` entity via 
+an attribute properly named 'team'. That is a one-to-many relation.  
+In addition, `team` has a 'head-count' attribute which is calculated by applying 
+the `count` fn to the value of its 'employees' attribute.
+
+Next, we're missing some events to bootstrap our data:
+```clojure
+(def events ["engineers' employees include joe"])
+```
+This would be linking the engineers team with the employee joe.  
+Lets kick inference over what we have so far, and check the engineers' head-count:
+```clojure
+(require '[ginfer.core :as g])
+(def state (g/infer blueprints events :dialect "en"))
+(g/finalize state)
+(g/get-data state "team/engineers" :team/head-count)
+;=> 1
+```
+Behind the scene, a `team` entity identified by "team/engineers", and a 
+`employee` entity identified by "employee/joe" were created and got 'linked' 
+via their 'employees' and 'team' attributes respectively; What's more, the 
+coordinate ["team/engineers" :team/employees] notified of this change, and 
+as a result ["team/engineers" :team/head-count] was evaluated to 1.
+
+Nice. Now lets add a department entity type to the mix:
+```clojure
+(def blueprints (into blueprints 
+                ["department has-many teams and team has department"
+                 "department head-count sum from [[teams head-count]]"
+                 "employee allegiance identity from [[team department id]]"]))
+```
+We expand the `employee` type to have the 'allegiance' attribute, determined to 
+be the id value of the `department` entity of its `team`.
+`department` also has a 'head-count' attribute, calculated by applying the fn 
+`sum` to the list of head-count values acquired from its linked `team` entities.
+`sum` isn't an existing fn 
 so lets create it:
 ```clojure
 (defn sum [counts]
   (apply + counts))
 ```
-Good. `sum` here is the analogue to your real pure business logic, which may amount to any 
-number of fns and very elaborate. Everything around it, is how you chose to model your data, 
-and how your data entities refer to one another.  
+Good. `sum` here is the analogue to your real pure business logic, which may amount to any number of fns and very elaborate. Everything around it, is how we chose to model the data, and how our data entities refer to one another.  
+The weird '[[..]]' notation stands for a list of walkable paths in our model of any arbitrary length.  
+The `identity` and `sum` mentions are actually referencing our business logic, which expects as input the data found at the end of each of the listed paths.  
+
 Next, we're missing some events to bootstrap our data:
 ```clojure
-(def events ["foo's departments include rnd"
-             "rnd's teams include engineers"
-             "engineers' employees include joe"])
+(def events (conj events "rnd's teams include engineers"))
 ```
-In other words, we have a joe, working as an engineer in the rnd department of a company named 'foo'.
+In other words, we have joe working as an engineer in the rnd department.
 Lets kick inference over what we have so far, and check joe's allegiance:
 ```clojure
-(require '[ginfer.core :as g])
 (def state (g/infer blueprints events :dialect "en"))
-(finalize state)
-(get-data state "employee/joe" :employee/allegiance)
+(g/finalize state)
+(g/get-data state "employee/joe" :employee/allegiance)
 ;=> "department/rnd"
 ```
-Yup. Just what we expected. Joe is part of the engineers team, which resides under the rnd department; 
-so their allegiance is inferred to be the rnd department.<br>
-Note that the order of events above does not matter - the outcome is always consistent, as expected.<br>
-Now, what if we wanted to make some organizational changes?
+Yup. As we successfully linked "team/engineers" with "department/rnd", 
+["employee/joe" :employee/allegiance] got notified and was evaluated. In fact, 
+a second notification propagated this change to ["department/rnd" :department/head-count] as well.
+
+To wrap this up, lets add `company` to the hierarchy, and then shift the 
+engineers over to a whole new department. Why not?
 ```clojure
-(def more-events ["zoo's company is foo"
-                  "engineers' department is zoo"])
-(def connectors (get-in state [:persistence :connectors]))
-(def state (g/infer blueprints more-events :connectors connectors :dialect "en"))
-(finalize state)
-(get-data state "employee/joe" :employee/allegiance)
+(def blueprints (into blueprints 
+                ["company has-many departments and department has company"
+                 "company head-count sum from [[departments head-count]]"]))
+(def events (into events 
+                ["foo's departments include rnd"
+                 "zoo's company is foo"
+                 "engineers' department is zoo"]))
+```
+So the first two events simply tie the rnd and zoo departments to company foo. Then the last event sends all engineers to the zoo:
+```clojure
+(def state (g/infer blueprints events :dialect "en"))
+(g/finalize state)
+(g/get-data state "employee/joe" :employee/allegiance)
 ;=> "department/zoo"
-(get-data state "company/foo" :company/head-count)
+(g/get-data state "company/foo" :company/head-count)
 ;=> 1
 ```
-And Joe's allegiance is now to the Zoo department (and the company head-count remains 1).<br>
-Again, the order of events doesn't matter. In fact, it doesn't even matter if "zoo's company is 
-foo" or if "foo's departments include zoo", those are totally equivalent events as well.
-Also, note our use of 'connectors'. We didn't explicitly pass in any before, so in-memory default 
-connectors were created for us. We just made sure to pass these explicitly the second time around, 
-to gain access into their data (in real-life, this data resides in your external db of course).
+The engineers getting moved to the zoo actually had to be propagated all over the place: Joe's allegiance was re-evaluated, and also foo's head-count (which remained 1 so wasn't actually updated), but even before that, the engineers had to be unlinked from rnd, and rnd's head-count went down to 0, while zoo's head-count is now 1.
+
+Few more clarifications are in order:
+- Linking events are symmetric, linking can occur in any direction
+- Linking in the plural case is additive, but properly overwriting in the single case
 
 This example is quite powerful, because it is simple enough to follow, and yet - a product 
 built on a similar premise in real-life can be quite elaborate and difficult to maintain. With 

@@ -11,5 +11,6 @@
                  [com.github.s-doti/seamless-async "1.0.2"]
                  [com.github.s-doti/persistroids "1.0.1"]
                  [com.github.s-doti/sepl "1.0.1"]]
-  :profiles {:dev {:dependencies [[midje "1.10.9"]]}}
+  :profiles {:dev {:dependencies [[midje "1.10.9" :exclusions [org.clojure/clojure]]] 
+                   :plugins [[lein-midje "3.2.1"]]}}
   :repl-options {:init-ns ginfer.core})
